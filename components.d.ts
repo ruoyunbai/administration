@@ -10,7 +10,12 @@ declare module 'vue' {
     NutButton: typeof import('@nutui/nutui-taro')['Button']
     NutCell: typeof import('@nutui/nutui-taro')['Cell']
     NutCellGroup: typeof import('@nutui/nutui-taro')['CellGroup']
-    NutCollapse: typeof import('@nutui/nutui-taro')['Collapse']
-    NutCollapseItem: typeof import('@nutui/nutui-taro')['CollapseItem']
+    NutForm: typeof import('@nutui/nutui-taro')['Form']
+    NutFormItem: typeof import('@nutui/nutui-taro')['FormItem']
+    NutInput: typeof import('@nutui/nutui-taro')['Input']
+    NutPopup: typeof import('@nutui/nutui-taro')['Popup']
+    NutRadio: typeof import('@nutui/nutui-taro')['Radio']
+    NutRadioGroup: typeof import('@nutui/nutui-taro')['RadioGroup']
+    NutSearchbar: typeof import('@nutui/nutui-taro')['Searchbar']
   }
 }

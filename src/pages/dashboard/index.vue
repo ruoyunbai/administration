@@ -39,6 +39,10 @@
     <nut-cell-group title="报表导出">
       <nut-button type="primary" block @click="exportAllStats">导出总报表 (XLSX)</nut-button>
     </nut-cell-group>
+
+    <nut-cell-group title="快捷入口">
+      <nut-cell title="排课" desc="进入排课页面" is-link @click="goSchedule"></nut-cell>
+    </nut-cell-group>
   </view>
 </template>
 
@@ -184,6 +188,10 @@ const exportAllStats = () => {
       });
     }
   });
+};
+
+const goSchedule = () => {
+  Taro.navigateTo({ url: '/pages/schedule/index' });
 };
 
 const navigateTerm = (direction) => {

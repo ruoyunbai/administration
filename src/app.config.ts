@@ -4,7 +4,9 @@ export default {
     'pages/courses/index',
     'pages/students/index',
     'pages/teachers/index',
+    'pages/schedule/index',
     'pages/finance/index',
+    'pages/financeOrders/index',
   ],
   window: {
     backgroundTextStyle: 'light',

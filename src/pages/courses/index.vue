@@ -29,55 +29,57 @@
     
     <!-- Course Stats -->
     <view v-if="courseStats">
-      <!-- Key Course Lists -->
-      <nut-collapse v-model="activeCollapse" icon="down-arrow">
-        <nut-collapse-item :title="`濒临取消课程 (${courseStats.near_cancellation.length})`" name="1">
-          <view v-if="courseStats.near_cancellation.length > 0">
-            <div v-for="course in courseStats.near_cancellation" :key="course.course_name" class="course-card">
-              <p><strong>{{ course.course_name }}</strong> ({{ course.teacher_name }})</p>
-              <p>选课情况: {{ course.enrolled }} / {{ course.capacity }} (饱和度: {{ course.saturation }}%)</p>
-              <p>开课下限: {{ course.min_enrollment || 'N/A' }}</p>
-            </div>
-          </view>
-          <view v-else class="empty-state">无</view>
-        </nut-collapse-item>
-        <nut-collapse-item :title="`高热度课程 (${courseStats.high_demand.length})`" name="2">
-           <view v-if="courseStats.high_demand.length > 0">
-            <div v-for="course in courseStats.high_demand" :key="course.course_name" class="course-card">
-              <p><strong>{{ course.course_name }}</strong> ({{ course.teacher_name }})</p>
-              <p>选课情况: {{ course.enrolled }} / {{ course.capacity }} (饱和度: {{ course.saturation }}%)</p>
-            </div>
-          </view>
-           <view v-else class="empty-state">无</view>
-        </nut-collapse-item>
-        <nut-collapse-item :title="`低迷课程 (${courseStats.low_interest.length})`" name="3">
-           <view v-if="courseStats.low_interest.length > 0">
-            <div v-for="course in courseStats.low_interest" :key="course.course_name" class="course-card">
-              <p><strong>{{ course.course_name }}</strong> ({{ course.teacher_name }})</p>
-              <p>选课情况: {{ course.enrolled }} / {{ course.capacity }} (饱和度: {{ course.saturation }}%)</p>
-            </div>
-          </view>
-           <view v-else class="empty-state">无</view>
-        </nut-collapse-item>
-      </nut-collapse>
-
       <!-- All Courses Table -->
-      <nut-cell-group :title="`全部课程列表 (${courseStats.all_courses.length})`">
-         <div class="table-container">
-            <div class="table-header">
-              <div class="table-cell">课程名称</div>
-              <div class="table-cell">教师</div>
-              <div class="table-cell small">已选/容量</div>
-              <div class="table-cell small">饱和度</div>
-            </div>
-            <div class="table-body">
-              <div v-for="course in courseStats.all_courses" :key="course.course_name" class="table-row">
-                <div class="table-cell">{{ course.course_name }}</div>
-                <div class="table-cell">{{ course.teacher_name }}</div>
-                <div class="table-cell small">{{ course.enrolled }} / {{ course.capacity }}</div>
-                <div class="table-cell small">{{ course.saturation }}%</div>
+      <view class="course-list-toolbar">
+        <view class="course-list-title">
+          全部课程列表 ({{ filteredCourses.length }}/{{ courseStats.all_courses.length }})
+        </view>
+        <picker
+          mode="selector"
+          :range="courseFilterOptions"
+          range-key="label"
+          @change="onCourseFilterChange"
+        >
+          <view>
+            <nut-button size="small" type="primary" plain>
+              筛选：{{ courseFilterLabel }}
+            </nut-button>
+          </view>
+        </picker>
+      </view>
+      <nut-cell-group>
+        <div class="course-list-container">
+          <view v-if="filteredCourses.length === 0" class="empty-state">无符合条件的课程</view>
+          <div v-for="course in filteredCourses" :key="courseKey(course)" class="course-item">
+            <!-- 课程基本信息 -->
+            <div class="course-header">
+              <div class="course-name">{{ course.course_name }}</div>
+              <div class="course-status" :class="getStatusClass(course)">
+                {{ getStatusText(course) }}
               </div>
             </div>
+            
+            <!-- 教师信息 -->
+            <div class="course-teacher">
+              <text class="teacher-label">教师:</text>
+              <text class="teacher-name">{{ course.teacher_name }}</text>
+            </div>
+            
+            <!-- 选课进度 -->
+            <div class="course-progress">
+              <div class="progress-info">
+                <text class="progress-text">{{ course.enrolled }} / {{ course.capacity }}</text>
+                <text class="progress-percent">{{ course.saturation }}%</text>
+              </div>
+              <div class="progress-bar">
+                <div
+                  class="progress-fill"
+                  :class="getProgressClass(course)"
+                  :style="{ width: Math.min(Number(course.saturation) || 0, 100) + '%' }"
+                ></div>
+              </div>
+            </div>
+          </div>
         </div>
       </nut-cell-group>
     </view>
@@ -97,8 +99,15 @@ import Taro from '@tarojs/taro';
 const termList = ref([]);
 const selectedTerm = ref(null);
 const courseStats = ref(null);
-const activeCollapse = ref(['1', '2']); // Default open collapses
 const loading = ref(true);
+const courseFilter = ref('all');
+
+const courseFilterOptions = [
+  { value: 'all', label: '全部' },
+  { value: 'near_cancellation', label: '未开课（人数<下限）' },
+  { value: 'high_demand', label: '高热度（>70%）' },
+  { value: 'low_interest', label: '冷门（<10%）' },
+];
 
 // --- Computed ---
 const isPrevButtonDisabled = computed(() => {
@@ -111,6 +120,101 @@ const isNextButtonDisabled = computed(() => {
   if (!selectedTerm.value) return true;
   const currentIndex = termList.value.findIndex(t => t.id === selectedTerm.value.id);
   return currentIndex >= termList.value.length - 1;
+});
+
+const normalizeText = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
+
+const courseId = (course) =>
+  course?.course_id ??
+  course?.courseId ??
+  course?.id ??
+  course?.course_code ??
+  course?.courseCode ??
+  null;
+
+const courseKey = (course) => {
+  const id = courseId(course);
+  if (id !== null && id !== undefined && id !== '') return String(id);
+  return `${normalizeText(course?.course_name)}||${normalizeText(course?.teacher_name)}`;
+};
+
+const courseFilterLabel = computed(() => {
+  const hit = courseFilterOptions.find(o => o.value === courseFilter.value);
+  return hit?.label ?? '全部';
+});
+
+const courseKeySetFromStatsList = (list) => {
+  if (!Array.isArray(list)) return new Set();
+  return new Set(list.map(courseKey));
+};
+
+const toNumber = (value) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const m = value.match(/-?\d+(\.\d+)?/);
+    if (m) {
+      const n = Number(m[0]);
+      return Number.isFinite(n) ? n : null;
+    }
+    return null;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const isNearCancellation = (course, stats) => {
+  const enrolled = toNumber(course?.enrolled);
+  const minEnrollment =
+    toNumber(course?.min_enrollment) ??
+    toNumber(course?.minEnrollment) ??
+    toNumber(course?.min_enroll) ??
+    toNumber(course?.minEnroll);
+  if (enrolled !== null && minEnrollment !== null) return enrolled < minEnrollment;
+
+  const list = stats?.near_cancellation;
+  if (!Array.isArray(list) || list.length === 0) return false;
+
+  const id = courseId(course);
+  if (id !== null && id !== undefined && id !== '') {
+    const idSet = new Set(list.map(courseId).filter(v => v !== null && v !== undefined && v !== '').map(String));
+    if (idSet.has(String(id))) return true;
+  }
+
+  const fullKeySet = courseKeySetFromStatsList(list);
+  if (fullKeySet.has(courseKey(course))) return true;
+
+  const nameSet = new Set(list.map(c => normalizeText(c?.course_name)).filter(Boolean));
+  return nameSet.has(normalizeText(course?.course_name));
+};
+
+const isHighDemand = (course) => {
+  const saturation = toNumber(course?.saturation);
+  if (saturation === null) return false;
+  return saturation >= 70;
+};
+
+const isLowInterest = (course) => {
+  const saturation = toNumber(course?.saturation);
+  if (saturation === null) return false;
+  return saturation < 10;
+};
+
+const filteredCourses = computed(() => {
+  const stats = courseStats.value;
+  const all = stats?.all_courses ?? [];
+  if (courseFilter.value === 'all') return all;
+
+  if (courseFilter.value === 'near_cancellation') {
+    return all.filter(c => isNearCancellation(c, stats));
+  }
+  if (courseFilter.value === 'high_demand') {
+    return all.filter(c => !isNearCancellation(c, stats) && isHighDemand(c));
+  }
+  if (courseFilter.value === 'low_interest') {
+    return all.filter(c => !isNearCancellation(c, stats) && isLowInterest(c));
+  }
+  return all;
 });
 
 // --- Methods ---
@@ -127,6 +231,7 @@ const fetchCourseStats = async (termId) => {
     
     if (res && res.state === 'success' && res.data) {
       courseStats.value = res.data.stats;
+      courseFilter.value = 'all';
     } else {
       Taro.showToast({ title: res.reason || '数据加载失败', icon: 'none' });
     }
@@ -171,6 +276,53 @@ const navigateTerm = (direction) => {
   }
 };
 
+const onCourseFilterChange = (e) => {
+  const newIndex = Number(e.detail.value);
+  const option = courseFilterOptions[newIndex];
+  if (option?.value) courseFilter.value = option.value;
+};
+
+const getCourseCategory = (course) => {
+  const stats = courseStats.value;
+  if (isNearCancellation(course, stats)) return 'near_cancellation';
+
+  const saturation = toNumber(course?.saturation) ?? 0;
+  if (saturation >= 100) return 'full';
+  if (saturation >= 70) return 'high_demand';
+  if (saturation < 10) return 'low_interest';
+  return 'normal';
+};
+
+// 获取状态样式类
+const getStatusClass = (course) => {
+  const category = getCourseCategory(course);
+  if (category === 'near_cancellation') return 'status-near';
+  if (category === 'full') return 'status-full';
+  if (category === 'high_demand') return 'status-high';
+  if (category === 'low_interest') return 'status-low';
+  return 'status-normal';
+};
+
+// 获取状态文本
+const getStatusText = (course) => {
+  const category = getCourseCategory(course);
+  if (category === 'near_cancellation') return '未开课';
+  if (category === 'full') return '已满';
+  if (category === 'high_demand') return '热门';
+  if (category === 'low_interest') return '冷门';
+  return '正常';
+};
+
+// 获取进度条样式类
+const getProgressClass = (course) => {
+  const category = getCourseCategory(course);
+  if (category === 'near_cancellation') return 'progress-critical';
+  if (category === 'full') return 'progress-full';
+  if (category === 'high_demand') return 'progress-high';
+  if (category === 'low_interest') return 'progress-low';
+  return 'progress-normal';
+};
+
 onMounted(loadTerms);
 
 </script>
@@ -178,6 +330,19 @@ onMounted(loadTerms);
 <style lang="scss">
 .course-dashboard {
   padding: 0;
+}
+
+.course-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+}
+
+.course-list-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1a1a;
 }
 
 .term-selector {
@@ -194,52 +359,159 @@ onMounted(loadTerms);
   color: #333;
 }
 
-.course-card {
-  background-color: #fff;
-  padding: 10px;
-  margin-bottom: 10px;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+// 课程列表容器
+.course-list-container {
+  background-color: #f8f9fa;
+  padding: 16px;
+  border-radius: 12px;
 }
 
-.table-container {
+// 单个课程项
+.course-item {
   background-color: #fff;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid #f0f0f0;
+  transition: all 0.2s ease;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+  
+  &:active {
+    transform: scale(0.98);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  }
 }
 
-.table-header, .table-row {
+// 课程头部（名称和状态）
+.course-header {
   display: flex;
-  align-items: center;
-  padding: 10px 15px;
-  border-bottom: 1px solid #eee;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
 }
 
-.table-header {
-  background-color: #f0f0f0;
-  font-weight: bold;
-  color: #333;
-}
-
-.table-cell {
+.course-name {
+  font-size: 30px;
+  font-weight: 600;
+  color: #1a1a1a;
+  line-height: 1.4;
   flex: 1;
-  text-align: left;
-  padding: 0 5px;
+  margin-right: 12px;
 }
 
-.table-cell.small {
-  text-align: center;
-  width: 100px; /* Fixed width for small cells */
+// 状态徽章
+.course-status {
+  padding: 6px 10px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+
+  &.status-near {
+    background-color: #fef2f2;
+    color: #dc2626;
+  }
+  
+  &.status-full {
+    background-color: #fee2e2;
+    color: #dc2626;
+  }
+  
+  &.status-high {
+    background-color: #fef3c7;
+    color: #d97706;
+  }
+  
+  &.status-normal {
+    background-color: #d1fae5;
+    color: #059669;
+  }
+  
+  &.status-low {
+    background-color: #dbeafe;
+    color: #2563eb;
+  }
+  
+  &.status-critical {
+    background-color: #f3f4f6;
+    color: #6b7280;
+  }
 }
 
-.table-body {
-  max-height: 400px; /* Adjust as needed */
-  overflow-y: auto;
+// 教师信息
+.course-teacher {
+  margin-bottom: 12px;
+  
+  .teacher-label {
+    font-size: 16px;
+    color: #6b7280;
+    margin-right: 6px;
+  }
+  
+  .teacher-name {
+    font-size: 26px;
+    color: #374151;
+    font-weight: 500;
+  }
 }
 
-.table-row:last-child {
-  border-bottom: none;
+// 选课进度
+.course-progress {
+  .progress-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    
+    .progress-text {
+      font-size: 26px;
+      color: #6b7280;
+    }
+    
+    .progress-percent {
+      font-size: 26px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+  }
+}
+
+// 进度条
+.progress-bar {
+  height: 6px;
+  background-color: #f3f4f6;
+  border-radius: 3px;
+  overflow: hidden;
+  
+  .progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+    
+    &.progress-full {
+      background: linear-gradient(90deg, #dc2626 0%, #ef4444 100%);
+    }
+    
+    &.progress-high {
+      background: linear-gradient(90deg, #d97706 0%, #f59e0b 100%);
+    }
+    
+    &.progress-normal {
+      background: linear-gradient(90deg, #059669 0%, #10b981 100%);
+    }
+    
+    &.progress-low {
+      background: linear-gradient(90deg, #2563eb 0%, #3b82f6 100%);
+    }
+    
+    &.progress-critical {
+      background: linear-gradient(90deg, #6b7280 0%, #9ca3af 100%);
+    }
+  }
 }
 
 .empty-state {

@@ -1,16 +1,48 @@
 import Taro from '@tarojs/taro';
 
+const normalizeBaseUrl = (value) => {
+  const raw = String(value ?? '').replace(/"/g, '');
+  return raw.replace(/\/+$/, '');
+};
+
+const joinUrl = (baseUrl, path) => {
+  const base = normalizeBaseUrl(baseUrl);
+  if (!path) return base;
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith('/')) return `${base}${path}`;
+  return `${base}/${path}`;
+};
+
+const sanitizeParams = (data) => {
+  if (!data || typeof data !== 'object') return data;
+  const cleaned = {};
+  Object.keys(data).forEach((key) => {
+    const value = data[key];
+    if (value === undefined || value === null) return;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      if (trimmed === 'undefined' || trimmed === 'null') return;
+      cleaned[key] = value;
+      return;
+    }
+    cleaned[key] = value;
+  });
+  return cleaned;
+};
+
 const request = (options) => {
-  const { url, method, data } = options;
-  
+  const { url, method, data, baseUrl } = options;
+
   // 拼接完整的请求地址
-  const fullUrl = BASE_URL + url;
+  const fullUrl = joinUrl(baseUrl ?? BASE_URL, url);
+  const safeData = sanitizeParams(data);
 
   return new Promise((resolve, reject) => {
     Taro.request({
       url: fullUrl,
       method: method || 'GET',
-      data,
+      data: safeData,
       header: {
         'Content-Type': 'application/json',
       },

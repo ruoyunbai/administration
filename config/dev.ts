@@ -1,12 +1,11 @@
 import type { UserConfigExport } from "@tarojs/cli";
+
 export default {
    logger: {
     quiet: false,
     stats: true
   },
-  mini: {},
-  h5: {},
   defineConstants: {
-    BASE_URL: '"http://localhost:5005/api/v4"'
+    BASE_URL: JSON.stringify(process.env.BACKEND_URL || "http://localhost:5005/api/v4")
   }
 } satisfies UserConfigExport<'webpack5'>
